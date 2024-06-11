@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  OpenAIAPIKey:
+    Type: String
+    Description: "Your OpenAI API key"
+  OpenAIModel:
+    Type: String
+    Description: Model Id
+    Default: gpt-4-turbo
+  OpenAIBaseUrl:
+    Type: String
+    Default: https://api.openai.com/v1
+    Description: "Doesnt need to be openai, just a openai compatible endpoint ie: vLLM"
+
+Resources:
+
+  OpenAIChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/completions.openaiHandler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          OPENAI_API_KEY: !Ref OpenAIAPIKey
+          OPENAI_MODEL: !Ref OpenAIModel
+          OPENAI_BASE_URL: !Ref OpenAIBaseUrl
+          
+  OpenAIFunctionURL:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt OpenAIChatFunction.Arn
+      AuthType: NONE
+      InvokeMode: RESPONSE_STREAM
+      Cors:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - '*'
+        AllowHeaders:
+          - '*'
+        ExposeHeaders:
+          - '*'
+        MaxAge: 3600
+
+
+  OpenAIChatFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunctionUrl"
+      Principal: "*"
+      FunctionName: !GetAtt OpenAIChatFunction.Arn
+      FunctionUrlAuthType: "NONE"
+
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunctionUrl"
+                Resource: "*"
+
+
+Outputs:
+
+  OpenAIStreamFunctionUrl:
+    Value: !GetAtt OpenAIFunctionURL.FunctionUrl
+    Description: URL for invoking the OpenAI stream function

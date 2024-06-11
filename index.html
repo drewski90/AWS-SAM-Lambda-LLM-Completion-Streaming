@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI Streaming Test</title>
+    <!-- Vuetify CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@2.6.0/dist/vuetify.min.css" rel="stylesheet">
+    <!-- Vue.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <!-- Vuetify.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@2.6.0/dist/vuetify.js"></script>
+</head>
+<body>
+    <div id="app">
+        <v-app>
+            <v-container>
+                <v-row>
+                    <v-col>
+                        <h1>OpenAI Streaming Test</h1>
+                        <v-form @submit.prevent="handleSubmit">
+														<v-text-field
+                                label="OpenAI Stream URL"
+                                v-model="streamUrl"
+                                required
+                            ></v-text-field>
+                            <v-text-field
+                                label="Prompt"
+                                v-model="prompt"
+                                required
+                            ></v-text-field>
+                            <v-btn type="submit" color="primary" :disabled="prompt.length === 0">Submit</v-btn>
+                        </v-form>
+                        <h2>Response:</h2>
+                        <v-card style="overflow: scroll;">
+                            <v-card-text>
+                                <pre>{{ messages }}{{pendingMessage}}</pre>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </v-container>
+        </v-app>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            vuetify: new Vuetify(),
+            data: () => ({
+                messages: [],
+				streamUrl: window.localStorage.getItem('function-url'),
+                prompt: '',
+			    pendingMessage: null
+            }),
+            watch: {
+                streamUrl(v) {
+                    window.localStorage.setItem('function-url', v);
+                }
+            },
+            methods: {
+                async handleSubmit() {
+
+                    try {
+                        // create a message for the current prompt
+                        const userMessage = { "role": "user", "content": this.prompt };
+
+                        const response = await fetch(this.streamUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ messages: [...this.messages, userMessage] }),
+                        });
+
+                        if (!response.ok) {
+                            this.response = 'Error: ' + response.statusText;
+                            return;
+                        }
+
+                        this.messages.push(userMessage)
+                        this.prompt = "";
+
+                        this.pendingMessage = {'role': 'assistant', 'content': ""};
+
+                        const handleLine = (msg) => {
+                            if (msg.includes('[DONE]')) {
+                                this.messages = [...this.messages, this.pendingMessage]
+                                this.pendingMessage = null;
+                                return;
+                            } else {
+                                // attempt to parse a line as json
+                                try {
+                                    const json = JSON.parse(msg);
+                                    const content = json?.choices?.[0]?.delta?.content;
+                                    if (content) {
+                                        this.pendingMessage.content += content;
+                                    }
+                                } catch {
+                                    console.log('ignored: ', msg)
+                                }
+                            }
+                        }
+                        // initialize a response reader to handle stream
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buffer += decoder.decode(value, { stream: true });
+                            // split the buffer on new lines
+                            let lines = buffer.split('\n');
+                            buffer = lines.pop(); // Keep the last partial line in buffer
+
+                            lines.forEach(line => {
+                                if (line.startsWith('data: ')) {
+                                    handleLine(line.substring(6) + '\n');
+                                }
+                            });
+                        }
+
+                        if (buffer) {
+                            // Handle the last line if there is any leftover
+                            if (buffer.startsWith('data: ')) {
+								handleLine(buffer.substring(6) + '\n');
+                            }
+                        }
+										
+                    } catch (error) {
+                        this.response = 'Error: ' + error.message;
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
