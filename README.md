@@ -40,7 +40,6 @@ Using Lambda Function URL
 
 ### Cons:
 
-    No Streaming Support: API Gateway WebSocket does not support streaming responses, which is a limitation for applications needing real-time data from Lambda functions.
     Complexity: More complex to set up and manage compared to using function URLs.
     Cost: Potentially higher costs due to additional API Gateway charges.
 
